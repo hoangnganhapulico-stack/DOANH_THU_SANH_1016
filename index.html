@@ -265,6 +265,13 @@ async function loadFiles(input,kind){
 }
 
 /* ================= Analysis ================= */
+function catOf(r){
+  let code=String(r.l1code||'').trim().replace(/^cat\s*/i,''),name=String(r.l1||'').trim();
+  if(!code){const m=name.match(/^(?:cat\s*)?(\d{1,4})\s*[.\-:_)]?\s+(.+)$/i);if(m){code=m[1];name=m[2];}}
+  if(/^\d+$/.test(code))code=String(parseInt(code,10));
+  if(code&&norm(name)===norm(code))name='';
+  return code?'CAT '+code+(name?' - '+name:''):(name||'(Không rõ ngành)');
+}
 function analyze(){
   const c=getCfg(),POS=posNorm(c.cfgPos);let from=c.cfgFrom,to=c.cfgTo;
   if(!from||!to){const ds=S.detail.rows.filter(r=>r.day&&r.pos===POS).map(r=>r.day).sort();if(ds.length){from=from||ds[0];to=to||ds[ds.length-1];}}
@@ -282,7 +289,7 @@ function analyze(){
     inRange.push(r);
     const d=days[r.day]||(days[r.day]={net:0,qty:0,slips:new Set(),store:0,storeSlips:new Set(),cost:0,mNet:0});
     d.store+=r.amt;d.storeSlips.add(r.pos+'|'+r.slip);
-    const lk=r.l1||r.l1code||'(Không rõ ngành)';
+    const lk=catOf(r);
     if(r.pos===POS){
       d.net+=r.amt;d.qty+=r.qty;d.slips.add(r.slip);
       const L=layerS[lk]||(layerS[lk]={net:0,qty:0,code:r.l1code});L.net+=r.amt;L.qty+=r.qty;
@@ -351,9 +358,9 @@ function render(A){
   <tr class="tot"><td class="t">Tổng</td><td>${fmt(T.net)}</td><td>${fmt(T.cust)}</td><td>${fmt(T.cust?T.net/T.cust:0)}</td><td>${fmt(T.qty)}</td><td>${pct(T.store?T.net/T.store:0)}</td></tr></table></div></div></div>`;
   // 3. Layers
   if(A.layers.length){
-    h+=`<div class="card"><h2><span class="no">${++n}</span>Hiệu quả mang hàng xuống sảnh theo ngành (Layer 1)</h2>
+    h+=`<div class="card"><h2><span class="no">${++n}</span>Hiệu quả mang hàng xuống sảnh theo CAT ngành hàng (Layer 1)</h2>
     <div class="formula">Chỉ số tương đối = (DT ngành tại sảnh / DT ngành tại quầy) ÷ trung vị các ngành đang bày ở sảnh. ≥1.3 = hiệu quả cao · 0.6-1.3 = trung bình · &lt;0.6 = thấp. So tương đối vì sảnh nhỏ nên mật độ DT luôn cao hơn quầy.</div>
-    <div class="tw"><table><tr><th class="t">Ngành</th><th>DT sảnh</th><th>% DT sảnh</th><th>SL</th><th>DT cùng ngành tại quầy</th>${A.layers[0].dS!=null?'<th>DT/m²/ngày sảnh</th><th>DT/m²/ngày quầy</th>':''}<th>Chỉ số</th><th>Đánh giá</th></tr>
+    <div class="tw"><table><tr><th class="t">CAT / Ngành</th><th>DT sảnh</th><th>% DT sảnh</th><th>SL</th><th>DT cùng ngành tại quầy</th>${A.layers[0].dS!=null?'<th>DT/m²/ngày sảnh</th><th>DT/m²/ngày quầy</th>':''}<th>Chỉ số</th><th>Đánh giá</th></tr>
     ${A.layers.map(l=>`<tr><td class="t">${esc(l.name)}</td><td>${fmt(l.net)}</td><td>${pct(l.share)}</td><td>${fmt(l.qty)}</td><td>${fmt(l.quay)}</td>${l.dS!=null?`<td>${fmt(l.dS)}</td><td>${fmt(l.dQ)}</td>`:''}<td>${fmtD(l.rel,2)}</td><td>${l.rate==='g'?'<span class="tag g">Cao</span>':l.rate==='w'?'<span class="tag w">Trung bình</span>':l.rate==='b'?'<span class="tag b">Thấp</span>':'<span class="tag w">Chỉ bán ở sảnh</span>'}</td></tr>`).join('')}
     </table></div><div style="margin-top:10px">${hbar(A.layers.slice(0,12).map(l=>({l:l.name,v:l.net,t:fmt(l.net)+'đ'})))}</div></div>`;
   }
@@ -373,16 +380,16 @@ function render(A){
     ${best.length?`<div class="note">Ngành hiệu quả cao tại sảnh: ${best.map(esc).join(', ')} - ưu tiên mang xuống sảnh đợt sau.</div>`:''}</div>`;}
   // 6. SKU
   h+=`<div class="card"><h2><span class="no">${++n}</span>Danh sách mã hàng bán tại Sảnh</h2>
-  <div class="row" style="margin-bottom:8px"><input id="skuQ" placeholder="Tìm tên / barcode / ngành" style="max-width:320px"><button class="btn ghost sm" id="skuCsv">Xuất CSV</button><span class="sub" id="skuSum"></span></div>
+  <div class="row" style="margin-bottom:8px"><input id="skuQ" placeholder="Tìm tên / barcode / CAT / ngành" style="max-width:320px"><button class="btn ghost sm" id="skuCsv">Xuất CSV</button><span class="sub" id="skuSum"></span></div>
   <div class="tw" style="max-height:480px;overflow:auto"><table id="skuTbl"></table></div></div>`;
   $('out').innerHTML=h;
   const drawSku=()=>{const q=norm($('skuQ').value);const list=A.sku.filter(s=>!q||norm(s.name+s.bc+s.l1).includes(q));
     const tn=list.reduce((a,s)=>a+s.net,0),tq=list.reduce((a,s)=>a+s.qty,0);
     $('skuSum').textContent=`${fmt(list.length)} mã · ${fmt(tq)} SP · ${fmt(tn)}đ`+(Math.abs(A.sku.reduce((a,s)=>a+s.net,0)-T.net)>1?' (lệch tổng!)':'');
-    $('skuTbl').innerHTML=`<tr><th class="t">#</th><th class="t">Barcode</th><th class="t">Tên hàng</th><th class="t">Ngành</th><th>SL</th><th>Net Sales</th><th>% DT sảnh</th>${A.gp?'<th>GP%</th>':''}</tr>`+
+    $('skuTbl').innerHTML=`<tr><th class="t">#</th><th class="t">Barcode</th><th class="t">Tên hàng</th><th class="t">CAT / Ngành</th><th>SL</th><th>Net Sales</th><th>% DT sảnh</th>${A.gp?'<th>GP%</th>':''}</tr>`+
       list.map((s,i)=>`<tr><td class="t">${i+1}</td><td class="t">${esc(s.bc)}</td><td class="t">${esc(s.name)}</td><td class="t">${esc(s.l1)}</td><td>${fmt(s.qty)}</td><td>${fmt(s.net)}</td><td>${pct(T.net?s.net/T.net:0)}</td>${A.gp?`<td>${s.cost!=null&&s.net?pct((s.net-s.cost)/s.net):'-'}</td>`:''}</tr>`).join('');};
   $('skuQ').oninput=drawSku;drawSku();
-  $('skuCsv').onclick=()=>{const rows=[['Barcode','Item Name','Layer1','QTY','Net Sales']].concat(A.sku.map(s=>[s.bc,s.name,s.l1,s.qty,Math.round(s.net)]));
+  $('skuCsv').onclick=()=>{const rows=[['Barcode','Item Name','CAT / Layer1','QTY','Net Sales']].concat(A.sku.map(s=>[s.bc,s.name,s.l1,s.qty,Math.round(s.net)]));
     const csv='﻿'+rows.map(r=>r.map(x=>'"'+String(x).replace(/"/g,'""')+'"').join(',')).join('\n');
     const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));a.download='SKU_Sanh_'+strip(A.name).replace(/\W+/g,'_')+'_'+A.from+'_'+A.to+'.csv';a.click();};
 }
@@ -412,12 +419,12 @@ function buildReport(A){
     A.daily.map(d=>[dLabel(d.day)+'/'+d.day.slice(0,4),Math.round(d.net),d.cust,Math.round(d.aov),d.qty,Math.round(d.store),P(d.share)]),
     [[B('Tổng'),{v:Math.round(T.net),s:'bn'},{v:T.cust,s:'bn'},{v:Math.round(T.cust?T.net/T.cust:0),s:'bn'},{v:T.qty,s:'bn'},{v:Math.round(T.store),s:'bn'},{v:T.store?T.net/T.store:0,s:'bp'}]]);
   const hasD=A.layers.some(l=>l.dS!=null);
-  const lay=[H(['Ngành (Layer 1)','DT sảnh (đ)','% DT sảnh','Số lượng','DT cùng ngành tại quầy (đ)'].concat(hasD?['DT/m²/ngày sảnh','DT/m²/ngày quầy']:[],['Chỉ số tương đối','Đánh giá']))].concat(
+  const lay=[H(['CAT / Ngành (Layer 1)','DT sảnh (đ)','% DT sảnh','Số lượng','DT cùng ngành tại quầy (đ)'].concat(hasD?['DT/m²/ngày sảnh','DT/m²/ngày quầy']:[],['Chỉ số tương đối','Đánh giá']))].concat(
     A.layers.map(l=>[l.name,Math.round(l.net),P(l.share),l.qty,Math.round(l.quay)].concat(hasD?[Math.round(l.dS),Math.round(l.dQ)]:[],[l.rel==null?'':Math.round(l.rel*100)/100,rate[l.rate]])));
   lay.push([],['Chỉ số tương đối = (DT ngành tại sảnh / DT ngành tại quầy) ÷ trung vị các ngành ở sảnh. ≥1.3 Cao · 0.6-1.3 Trung bình · <0.6 Thấp.']);
-  const sku=[H(['#','Barcode','Tên hàng','Ngành','Số lượng','Net Sales (đ)','% DT sảnh'].concat(A.gp?['Giá vốn (đ)','GP%']:[]))].concat(
+  const sku=[H(['#','Barcode','Tên hàng','CAT / Ngành','Số lượng','Net Sales (đ)','% DT sảnh'].concat(A.gp?['Giá vốn (đ)','GP%']:[]))].concat(
     A.sku.map((s,i)=>[i+1,s.bc,s.name,s.l1,s.qty,Math.round(s.net),P(T.net?s.net/T.net:0)].concat(A.gp?[s.cost!=null?Math.round(s.cost):'',s.cost!=null&&s.net?P((s.net-s.cost)/s.net):'']:[])));
-  const sd=[H(['Ngày','Barcode','Tên hàng','Ngành','Số lượng','Net Sales (đ)'])].concat(
+  const sd=[H(['Ngày','Barcode','Tên hàng','CAT / Ngành','Số lượng','Net Sales (đ)'])].concat(
     A.skuDay.map(x=>[dLabel(x.day)+'/'+x.day.slice(0,4),x.bc,x.name,x.l1,x.qty,Math.round(x.net)]));
   return[{name:'Tong quan',w:[34,60],rows:sum},{name:'Theo ngay',w:[14,16,10,12,12,18,10],rows:day},
     {name:'Theo nganh',w:[30,16,12,10,22,16,16,14,14],rows:lay},{name:'Ma hang',w:[6,16,40,24,10,16,10,14,10],rows:sku},
