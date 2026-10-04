@@ -3,8 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Doanh Thu Sảnh 1016</title>
-<meta property="og:title" content="Doanh Thu Sảnh 1016">
+<title>Doanh Thu Sảnh</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
 :root{
@@ -527,17 +526,24 @@ function dl(blob,fn){const a=document.createElement('a');a.href=URL.createObject
 const repName=A=>'BaoCao_Sanh_'+strip(A.name).replace(/\W+/g,'_')+'_'+A.from+'_'+A.to;
 function buildAll(ALL){
   const H=a=>a.map(v=>({v,s:'h'})),P=v=>({v,s:'p'}),B=v=>({v,s:'b'}),hasGP=ALL.some(A=>A.gp);
+  const t={net:0,cust:0,qty:0,rent:0,gp:0,store:0};
+  ALL.forEach(A=>{t.net+=A.T.net;t.cust+=A.T.cust;t.qty+=A.T.qty;t.rent+=A.rent;t.gp+=A.gp?A.gp.est:0;});
+  const dt=x=>dLabel(x)+(x?'/'+x.slice(0,4):'');
+  const M=[['POS',A=>A.POS,''],['Từ ngày',A=>dt(A.from),''],['Đến ngày',A=>dt(A.to),''],['Số ngày',A=>A.nDays,''],
+    ['Net Sales (đ)',A=>Math.round(A.T.net),Math.round(t.net)],['% DT CH',A=>P(A.T.store?A.T.net/A.T.store:0),''],
+    ['Khách',A=>A.T.cust,t.cust],['AOV (đ)',A=>Math.round(A.T.cust?A.T.net/A.T.cust:0),Math.round(t.cust?t.net/t.cust:0)],
+    ['Số lượng',A=>A.T.qty,t.qty],['Số mã',A=>A.sku.length,''],['DT/ngày (đ)',A=>Math.round(A.T.net/A.nDays),''],
+    ['Diện tích (m²)',A=>A.area||'',''],['DT/m²/ngày (đ)',A=>A.area?Math.round(A.T.net/A.area/A.nDays):'',''],['Tiền thuê (đ)',A=>A.rent,t.rent]];
+  if(hasGP)M.push(['GP%',A=>A.gp?P(A.gp.gpPct):'',''],['LN gộp ước tính (đ)',A=>A.gp?Math.round(A.gp.est):'',Math.round(t.gp)],['LN gộp sau thuê (đ)',A=>A.gp?Math.round(A.gp.est-A.rent):'',Math.round(t.gp-t.rent)]);
+  const multi=ALL.length>1;
   const sum=[[B('BÁO CÁO TỔNG HỢP DOANH THU CÁC SẢNH')],['Kohnan Parc Mall - Store 1016'],[],
-    H(['Sảnh','POS','Từ ngày','Đến ngày','Số ngày','Net Sales (đ)','% DT CH','Khách','AOV (đ)','Số lượng','Số mã','DT/ngày (đ)','Diện tích (m²)','DT/m²/ngày (đ)','Tiền thuê (đ)'].concat(hasGP?['GP%','LN gộp ước tính (đ)','LN gộp sau thuê (đ)']:[]))];
-  const t={net:0,cust:0,qty:0,rent:0,gp:0};
-  ALL.forEach(A=>{const T=A.T;t.net+=T.net;t.cust+=T.cust;t.qty+=T.qty;t.rent+=A.rent;t.gp+=A.gp?A.gp.est:0;
-    sum.push([A.name,A.POS,dLabel(A.from)+(A.from?'/'+A.from.slice(0,4):''),dLabel(A.to)+(A.to?'/'+A.to.slice(0,4):''),A.nDays,Math.round(T.net),P(T.store?T.net/T.store:0),T.cust,Math.round(T.cust?T.net/T.cust:0),T.qty,A.sku.length,Math.round(T.net/A.nDays),A.area||'',A.area?Math.round(T.net/A.area/A.nDays):'',A.rent].concat(hasGP?(A.gp?[P(A.gp.gpPct),Math.round(A.gp.est),Math.round(A.gp.est-A.rent)]:['','','']):[]));});
-  sum.push([B('Tổng'),'','','','',{v:Math.round(t.net),s:'bn'},'',{v:t.cust,s:'bn'},{v:Math.round(t.cust?t.net/t.cust:0),s:'bn'},{v:t.qty,s:'bn'},'','','','',{v:t.rent,s:'bn'}].concat(hasGP?['',{v:Math.round(t.gp),s:'bn'},{v:Math.round(t.gp-t.rent),s:'bn'}]:[]));
+    H(['Chỉ tiêu'].concat(ALL.map(A=>A.name),multi?['Tổng']:[]))];
+  M.forEach(([lb,f,tv])=>{const r=[B(lb)].concat(ALL.map(f));if(multi)r.push(tv===''?'':(typeof tv==='number'?{v:tv,s:'bn'}:tv));sum.push(r);});
   const ov=overlaps(ALL);if(ov.length){sum.push([],[B('Cảnh báo')]);ov.forEach(x=>sum.push([x.replace(/&amp;/g,'&')]));}
   const reps=ALL.map(A=>({A,sh:buildReport(A)}));
   sum.push([],[B('Kết luận từng sảnh')]);
   reps.forEach(r=>{const tq=r.sh[0].rows;const i=tq.findIndex(x=>x[0]&&x[0].v==='Kết luận');if(i>-1)tq.slice(i+1).forEach(x=>sum.push(x));});
-  const out=[{name:'Tong hop',w:[22,8,12,12,8,16,10,10,12,10,8,14,12,14,14,10,16,16],rows:sum}];
+  const out=[{name:'Tong hop',w:[24].concat(ALL.map(()=>18),[18]),rows:sum}];
   const names=reps[0].sh.map(x=>x.name).filter(x=>x!=='Tong quan');
   names.forEach(nm=>{const src=reps.map(r=>({A:r.A,sh:r.sh.find(x=>x.name===nm)})).filter(x=>x.sh);if(!src.length)return;
     const rows=[[{v:'Sảnh',s:'h'}].concat(src[0].sh.rows[0])];
