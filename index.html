@@ -113,6 +113,19 @@ svg .m{fill:var(--mute)}
 </div>
 
 <div id="out"></div>
+
+<div class="card" id="archCard">
+  <h2>📦 Sảnh đã kết thúc (lưu trữ)</h2>
+  <div class="sub">Bấm <b>Kết thúc &amp; lưu</b> ở dòng sảnh trong bảng cấu hình để chuyển sảnh xuống đây. Kết quả được lưu lại - bấm <b>Xem</b> là ra báo cáo, không cần nạp lại DETAIL.</div>
+  <div class="row" style="margin:10px 0">
+    <input id="archQ" placeholder="Tìm tên sảnh / POS" style="max-width:260px">
+    <button class="btn ghost sm" id="archXlsx">Xuất tổng hợp .XLSX</button>
+    <button class="btn ghost sm" id="archCsv">Xuất tổng hợp .CSV</button>
+    <button class="btn ghost sm" id="archBackup">Tải file sao lưu</button>
+    <label class="btn ghost sm" style="margin:0">Nạp file sao lưu<input type="file" id="archImport" accept=".json" style="display:none"></label>
+  </div>
+  <div class="tw"><table id="archTbl"></table></div>
+</div>
 </div>
 
 <script>
@@ -254,12 +267,54 @@ const SF=[['name','Tên sảnh','text','vd PET'],['pos','POS','text',''],['from'
 function saveSanhs(){idbSet('sanhs',{list:SANHS,active:ACTIVE});}
 function drawSanhTbl(){
   $('sanhTbl').innerHTML='<tr><th class="t">#</th>'+SF.map(f=>`<th class="t">${f[1]}</th>`).join('')+'<th></th></tr>'+
-    SANHS.map((x,i)=>`<tr><td class="t">${i+1}</td>${SF.map(f=>`<td><input type="${f[2]}" data-i="${i}" data-k="${f[0]}" value="${esc(x[f[0]]??'')}" placeholder="${f[3]}"></td>`).join('')}<td><button class="btn ghost sm" data-del="${i}" title="Xoá sảnh">✕</button></td></tr>`).join('');
+    SANHS.map((x,i)=>`<tr><td class="t">${i+1}</td>${SF.map(f=>`<td><input type="${f[2]}" data-i="${i}" data-k="${f[0]}" value="${esc(x[f[0]]??'')}" placeholder="${f[3]}"></td>`).join('')}<td style="white-space:nowrap"><button class="btn ghost sm" data-arch="${i}" title="Lưu kết quả sảnh này xuống mục Sảnh đã kết thúc">Kết thúc &amp; lưu</button> <button class="btn ghost sm" data-del="${i}" title="Xoá sảnh">✕</button></td></tr>`).join('');
+  $('sanhTbl').querySelectorAll('[data-arch]').forEach(b=>b.onclick=()=>archiveSanh(+b.dataset.arch));
   $('sanhTbl').querySelectorAll('input').forEach(el=>{
     el.oninput=()=>{SANHS[+el.dataset.i][el.dataset.k]=el.value;updateTitle();};
     el.onchange=()=>{SANHS[+el.dataset.i][el.dataset.k]=el.value;saveSanhs();if(S.detail)run();};});
   $('sanhTbl').querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>{if(SANHS.length<=1){alert('Cần ít nhất 1 sảnh.');return;}
     const x=SANHS.splice(+b.dataset.del,1)[0];if(ACTIVE===x.id)ACTIVE='all';saveSanhs();drawSanhTbl();if(S.detail)run();else updateTitle();});
+}
+/* ================= Lưu trữ sảnh đã kết thúc ================= */
+let ARCHIVE=[],ARCH_VIEW=null;
+function snap(A){const B=JSON.parse(JSON.stringify(A));B.W={badDate:[],outRange:0,outRangeDays:{}};return B;}
+function saveArchive(){idbSet('archive',ARCHIVE);}
+function archiveSanh(i){
+  const sc=SANHS[i];const A=(window.__ALL||[]).find(a=>a.id===sc.id);
+  if(!S.detail||!A){alert('Hãy nạp DETAIL và bấm Phân tích trước khi lưu sảnh.');return;}
+  if(!A.T.net){alert('Sảnh "'+A.name+'" chưa có doanh thu - kiểm tra POS/ngày trước khi lưu.');return;}
+  ARCHIVE.unshift({id:'a'+Date.now().toString(36)+Math.random().toString(36).slice(2,5),savedAt:new Date().toISOString(),A:snap(A)});saveArchive();
+  SANHS.splice(i,1);if(!SANHS.length)SANHS.push(newSanh());if(ACTIVE===sc.id)ACTIVE='all';saveSanhs();drawSanhTbl();drawArchive();
+  run();$('status').textContent='Đã lưu sảnh '+A.name+' xuống mục Sảnh đã kết thúc (cuối trang).';
+}
+function drawArchive(){
+  const q=norm($('archQ').value);const list=ARCHIVE.filter(x=>!q||norm(x.A.name+' pos'+x.A.POS).includes(q));
+  if(!ARCHIVE.length){$('archTbl').innerHTML='<tr><td class="t sub">Chưa có sảnh nào được lưu.</td></tr>';return;}
+  const hasGP=ARCHIVE.some(x=>x.A.gp);
+  $('archTbl').innerHTML=`<tr><th class="t">Sảnh</th><th>POS</th><th class="t">Thời gian</th><th>Ngày</th><th>Net Sales</th><th>Khách</th><th>AOV</th><th>DT/m²/ngày</th>${hasGP?'<th>GP%</th><th>LN gộp sau thuê</th>':''}<th class="t">Ngày lưu</th><th></th></tr>`+
+    list.map(x=>{const A=x.A,T=A.T;return`<tr><td class="t"><b>${esc(A.name)}</b></td><td>${esc(A.POS)}</td><td class="t">${dRange(A.from,A.to)}</td><td>${A.nDays}</td><td>${fmt(T.net)}</td><td>${fmt(T.cust)}</td><td>${fmt(T.cust?T.net/T.cust:0)}</td><td>${A.area?fmt(T.net/A.area/A.nDays):'-'}</td>${hasGP?`<td>${A.gp?pct(A.gp.gpPct):'-'}</td><td>${A.gp?fmt(A.gp.est-A.rent):'-'}</td>`:''}<td class="t">${new Date(x.savedAt).toLocaleDateString('vi-VN')}</td>
+      <td style="white-space:nowrap"><button class="btn sm" data-view="${x.id}">Xem</button> <button class="btn ghost sm" data-unarch="${x.id}" title="Đưa lại lên danh sách đang chạy (cần nạp DETAIL để phân tích lại)">Mở lại</button> <button class="btn ghost sm" data-rm="${x.id}" title="Xoá khỏi lưu trữ">✕</button></td></tr>`;}).join('')+
+    (list.length>1?`<tr class="tot"><td class="t">Tổng ${list.length} sảnh</td><td></td><td></td><td></td><td>${fmt(list.reduce((a,x)=>a+x.A.T.net,0))}</td><td>${fmt(list.reduce((a,x)=>a+x.A.T.cust,0))}</td><td></td><td></td>${hasGP?`<td></td><td>${fmt(list.reduce((a,x)=>a+(x.A.gp?x.A.gp.est-x.A.rent:0),0))}</td>`:''}<td></td><td></td></tr>`:'');
+  $('archTbl').querySelectorAll('[data-view]').forEach(b=>b.onclick=()=>viewArchive(b.dataset.view));
+  $('archTbl').querySelectorAll('[data-rm]').forEach(b=>b.onclick=()=>{const x=ARCHIVE.find(a=>a.id===b.dataset.rm);
+    if(!confirm('Xoá "'+x.A.name+'" khỏi lưu trữ? Không khôi phục được.'))return;ARCHIVE=ARCHIVE.filter(a=>a!==x);saveArchive();drawArchive();if(ARCH_VIEW&&ARCH_VIEW.id===x.id)closeArchive();});
+  $('archTbl').querySelectorAll('[data-unarch]').forEach(b=>b.onclick=()=>{const x=ARCHIVE.find(a=>a.id===b.dataset.unarch);const A=x.A;
+    const n=newSanh();Object.assign(n,{name:A.name,pos:A.POS,from:A.from,to:A.to,rent:String(A.rent||0),area:A.area?String(A.area):''});
+    if(SANHS.length===1&&!SANHS[0].name&&!SANHS[0].from)SANHS=[n];else SANHS.push(n);
+    ARCHIVE=ARCHIVE.filter(a=>a!==x);saveArchive();saveSanhs();drawSanhTbl();drawArchive();if(ARCH_VIEW&&ARCH_VIEW.id===x.id)closeArchive();else if(S.detail)run();});
+}
+function viewArchive(id){
+  const x=ARCHIVE.find(a=>a.id===id);if(!x)return;ARCH_VIEW={id,A:x.A};
+  $('out').innerHTML=`<div class="alert w row" style="justify-content:space-between"><span>📦 Đang xem <b>sảnh đã kết thúc: ${esc(x.A.name)}</b> (${dRange(x.A.from,x.A.to)}) · lưu ngày ${new Date(x.savedAt).toLocaleDateString('vi-VN')}</span><button class="btn ghost sm" id="btnBack">← Quay lại các sảnh đang chạy</button></div><div id="sanhOut"></div>`;
+  render(x.A);window.__A=x.A;$('btnBack').onclick=closeArchive;updateTitle();
+  window.scrollTo({top:$('out').offsetTop-10,behavior:'smooth'});
+}
+function closeArchive(){ARCH_VIEW=null;$('out').innerHTML='';if(S.detail)run();else{window.__A=null;updateTitle();}}
+function archExport(kind){
+  if(!ARCHIVE.length){alert('Chưa có sảnh nào được lưu.');return;}
+  const q=norm($('archQ').value);const L=ARCHIVE.filter(x=>!q||norm(x.A.name+' pos'+x.A.POS).includes(q)).map(x=>x.A);
+  const d=new Date(),E={sheets:buildAll(L),name:'BaoCao_SanhDaKetThuc_'+L.length+'_Sanh_'+d.getFullYear()+pad(d.getMonth()+1)+pad(d.getDate())};
+  kind==='csv'?exportCSV(E):exportXLSX(E);
 }
 function getCfg(){const c={};CFG_IDS.forEach(id=>c[id]=$(id).value);return c;}
 function setCfg(c){if(!c)return;CFG_IDS.forEach(id=>{if(c[id]!=null)$(id).value=c[id];});}
@@ -429,6 +484,7 @@ function render(A){
 function dRange(f,t){if(!f||!t)return'';const[fy,fm,fd]=f.split('-'),[ty,tm,td]=t.split('-');
   const fs=fd+'/'+fm,ts=td+'/'+tm+'/'+ty;return f===t?ts:(+td-+fd===1&&fm===tm&&fy===ty?fs+' & '+ts:fs+(fy!==ty?'/'+fy:'')+' - '+ts);}
 function updateTitle(){
+  if(ARCH_VIEW){const A=ARCH_VIEW.A;$('pageTitle').innerHTML='Doanh Thu <span>Sảnh '+esc(A.name)+'</span> - '+dRange(A.from,A.to)+' <span class="tag w" style="vertical-align:middle">Đã kết thúc</span>';document.title='Doanh Thu Sảnh '+A.name;return;}
   if(ACTIVE==='all'||!SANHS.find(x=>x.id===ACTIVE)){
     const ds=(window.__ALL||[]).flatMap(A=>[A.from,A.to]).filter(Boolean).sort();
     $('pageTitle').innerHTML='Doanh Thu <span>Các Sảnh</span> - Tổng hợp '+SANHS.length+' sảnh'+(ds.length?' · '+dRange(ds[0],ds[ds.length-1]):'');
@@ -552,12 +608,14 @@ function buildAll(ALL){
   return out;
 }
 function getExport(){
+  if(ARCH_VIEW)return{sheets:buildReport(ARCH_VIEW.A),name:repName(ARCH_VIEW.A)};
   const ALL=window.__ALL;if(!ALL||!ALL.length)return null;
+  if(ARCH_VIEW)return{sheets:buildReport(ARCH_VIEW.A),name:repName(ARCH_VIEW.A)};
   if(ACTIVE!=='all'&&window.__A)return{sheets:buildReport(__A),name:repName(__A)};
   const d=new Date();return{sheets:buildAll(ALL),name:'BaoCao_TongHop_'+ALL.length+'_Sanh_'+d.getFullYear()+pad(d.getMonth()+1)+pad(d.getDate())};
 }
-function exportCSV(){
-  const E=getExport();if(!E){alert('Hãy nạp DETAIL và bấm Phân tích trước.');return;}
+function exportCSV(ext){
+  const E=(ext&&ext.sheets)?ext:getExport();if(!E){alert('Hãy nạp DETAIL và bấm Phân tích trước.');return;}
   const cell=c=>{let v=(c&&typeof c==='object')?c.v:c;if(c&&typeof c==='object'&&/p/.test(c.s))v=Math.round(v*1000)/10+'%';return'"'+String(v??'').replace(/"/g,'""')+'"';};
   const out=[];E.sheets.forEach(sh=>{out.push('"=== '+sh.name.toUpperCase()+' ==="');sh.rows.forEach(r=>out.push(r.map(cell).join(',')));out.push('');});
   dl(new Blob(['﻿'+out.join('\r\n')],{type:'text/csv;charset=utf-8'}),E.name+'.csv');
@@ -577,8 +635,8 @@ function zip(files){
   e.setUint32(0,0x06054b50,true);e.setUint16(8,files.length,true);e.setUint16(10,files.length,true);e.setUint32(12,cs,true);e.setUint32(16,off,true);
   return new Blob([...parts,...cen,new Uint8Array(e.buffer)],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
 }
-function exportXLSX(){
-  const E=getExport();if(!E){alert('Hãy nạp DETAIL và bấm Phân tích trước.');return;}
+function exportXLSX(ext){
+  const E=(ext&&ext.sheets)?ext:getExport();if(!E){alert('Hãy nạp DETAIL và bấm Phân tích trước.');return;}
   const sheets=E.sheets,x=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])).replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g,'');
   const col=i=>{let s='';i++;while(i){const m=(i-1)%26;s=String.fromCharCode(65+m)+s;i=Math.floor((i-1)/26);}return s;};
   const SID={h:1,b:2,p:3,bn:4,bp:5,n:6};
@@ -598,7 +656,8 @@ function exportXLSX(){
 }
 function run(){
   if(!S.detail){$('status').textContent='Chưa nạp DETAIL.';return;}
-  try{if(!$('tabs'))$('out').innerHTML='<div class="tabs" id="tabs"></div><div id="sanhOut"></div>';
+  try{if(ARCH_VIEW){ARCH_VIEW=null;$('out').innerHTML='';}
+    if(!$('tabs'))$('out').innerHTML='<div class="tabs" id="tabs"></div><div id="sanhOut"></div>';
     window.__ALL=SANHS.map(sc=>analyze(sc));
     window.__ALL.forEach((A,i)=>A.name=nameOf(A,i));
     showTab();$('status').textContent='Đã phân tích '+SANHS.length+' sảnh · '+fmt(S.detail.rows.length)+' dòng DETAIL.';idbSet('cfg',getCfg());}
@@ -610,8 +669,16 @@ $('fDetail').onchange=e=>loadFiles(e.target,'detail');
 $('fInv').onchange=e=>loadFiles(e.target,'inv');
 $('btnRun').onclick=run;
 $('btnAdd').onclick=()=>{SANHS.push(newSanh());saveSanhs();drawSanhTbl();updateTitle();};
-$('btnCsv').onclick=exportCSV;
-$('btnXlsx').onclick=exportXLSX;
+$('btnCsv').onclick=()=>exportCSV();
+$('btnXlsx').onclick=()=>exportXLSX();
+$('archQ').oninput=drawArchive;
+$('archXlsx').onclick=()=>archExport('xlsx');
+$('archCsv').onclick=()=>archExport('csv');
+$('archBackup').onclick=()=>{if(!ARCHIVE.length){alert('Chưa có sảnh nào được lưu.');return;}const d=new Date();
+  dl(new Blob([JSON.stringify({type:'kohnan_sanh_archive',v:1,items:ARCHIVE})],{type:'application/json'}),'SaoLuu_SanhDaKetThuc_'+d.getFullYear()+pad(d.getMonth()+1)+pad(d.getDate())+'.json');};
+$('archImport').onchange=async e=>{const f=e.target.files[0];if(!f)return;try{const j=JSON.parse(await f.text());if(j.type!=='kohnan_sanh_archive')throw new Error('Không phải file sao lưu sảnh.');
+  let n=0;j.items.forEach(x=>{if(!ARCHIVE.find(a=>a.id===x.id)){ARCHIVE.push(x);n++;}});ARCHIVE.sort((a,b)=>b.savedAt<a.savedAt?-1:1);saveArchive();drawArchive();$('status').textContent='Đã nạp '+n+' sảnh từ file sao lưu.';}
+  catch(err){alert(err.message);}e.target.value='';};
 $('btnClear').onclick=async()=>{await idbSet('data',null);window.__ALL=null;S.detail=S.inv=null;S.names={detail:'',inv:''};showNames();$('out').innerHTML='';$('status').textContent='Đã xoá.';};
 CFG_IDS.forEach(id=>{$(id).addEventListener('change',()=>idbSet('cfg',getCfg()));$(id).addEventListener('input',updateTitle);});
 $('btnTheme').onclick=()=>{const r=document.documentElement;const dark=r.dataset.theme?r.dataset.theme==='dark':matchMedia('(prefers-color-scheme: dark)').matches;r.dataset.theme=dark?'light':'dark';try{localStorage.setItem('sanhTheme',r.dataset.theme);}catch(e){}};
@@ -621,7 +688,7 @@ try{const t=localStorage.getItem('sanhTheme');if(t)document.documentElement.data
   if(sv&&sv.list&&sv.list.length){SANHS=sv.list;ACTIVE=sv.active||'all';}
   else if(cfg&&cfg.cfgPos){const x=newSanh();Object.assign(x,{name:cfg.cfgName||'',pos:cfg.cfgPos,from:cfg.cfgFrom||'',to:cfg.cfgTo||'',rent:cfg.cfgRent||'0',area:cfg.cfgArea||''});SANHS=[x];}
   else SANHS=[newSanh()];
-  drawSanhTbl();updateTitle();const d=await idbGet('data');
+  drawSanhTbl();ARCHIVE=(await idbGet('archive'))||[];drawArchive();updateTitle();const d=await idbGet('data');
   if(d){S.detail=d.detail||null;S.inv=d.inv||null;S.names=d.names||S.names;showNames();if(S.detail)run();}})();
 </script>
 </body>
